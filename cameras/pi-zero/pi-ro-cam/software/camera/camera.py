@@ -6,29 +6,48 @@ from threading import Thread
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder, Quality
 from libcamera import controls
+from PIL import Image
 
 class Camera:
   def __init__(self, main):
     self.main = main
     self.display = main.display
     self.img_base_path = os.getcwd() + "/captured-media/"
-    self.picam2 = Picamera2()
-    self.encoder = H264Encoder()
-    # dimensions based on 4608x2592 resolution, set for camera module v3
-    self.small_res_config = self.picam2.create_still_configuration(main={"size": (240, 240)}) # should not be a square
-    self.full_res_config = self.picam2.create_still_configuration()
+    self.mock_mode = False
+    
+    # Try to initialize camera, fall back to mock mode if not available
+    try:
+      self.picam2 = Picamera2()
+      self.encoder = H264Encoder()
+      # dimensions based on 4608x2592 resolution, set for camera module v3
+      self.small_res_config = self.picam2.create_still_configuration(main={"size": (240, 240)}) # should not be a square
+      self.full_res_config = self.picam2.create_still_configuration()
+      self.picam2.configure(self.small_res_config)
+      print("Camera initialized successfully")
+    except (IndexError, RuntimeError) as e:
+      print(f"WARNING: No camera detected ({e}). Running in MOCK MODE for development.")
+      self.mock_mode = True
+      self.picam2 = None
+      self.encoder = None
+      self.small_res_config = None
+      self.full_res_config = None
+    
     self.last_mode = "small"
     self.live_preview_active = False
     self.live_preview_pause = False
     self.display = main.display
 
-    self.picam2.configure(self.small_res_config)
-
   def start(self):
-    self.picam2.start()
+    if not self.mock_mode:
+      self.picam2.start()
+    else:
+      print("MOCK: Camera start called")
     # 0 is infinity, 1 is 1 meter. 10 max is closest 1/10 meters or 10 cm
 
   def check_focus(self):
+    if self.mock_mode:
+      return
+    
     if (self.main.focus_level == -1):
       self.picam2.set_controls({"AfMode": controls.AfModeEnum.Continuous})
     else:
@@ -36,6 +55,11 @@ class Camera:
       self.picam2.set_controls({"AfMode": controls.AfModeEnum.Manual, "LensPosition": self.main.focus_level})
 
   def change_mode(self, mode):
+    if self.mock_mode:
+      print(f"MOCK: Change mode to {mode}")
+      self.last_mode = mode
+      return
+    
     if (mode == "full"):
       self.picam2.switch_mode(self.full_res_config)
     else:
@@ -46,6 +70,11 @@ class Camera:
     print('taking photo')
     time.sleep(0.25) # add delay for recoil of spring button
     img_path = self.img_base_path + str(time.time()).split(".")[0] + "f" + str(self.main.focus_level) + ".jpg"
+    
+    if self.mock_mode:
+      print(f"MOCK: Would capture photo to {img_path}")
+      return
+    
     self.change_mode("full")
     self.picam2.capture_file(img_path)
     self.change_mode(self.last_mode)
@@ -68,7 +97,13 @@ class Camera:
         self.check_focus()
 
         branch_hit = True
-        pil_img = self.picam2.capture_image()
+        
+        if self.mock_mode:
+          # Create a dummy image for mock mode
+          pil_img = Image.new('RGB', (240, 240), color=(100, 100, 150))
+        else:
+          pil_img = self.picam2.capture_image()
+        
         pil_img = self.check_mod(pil_img) # bad name
 
         # rotate down

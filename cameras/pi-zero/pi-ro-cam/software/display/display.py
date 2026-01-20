@@ -9,11 +9,14 @@ import time
 import logging
 import spidev as SPI
 
-software_path = os.getcwd()
+# Get the directory where this file (display.py) is located
+display_path = os.path.dirname(os.path.abspath(__file__))
+# Get the software directory (parent of display)
+software_path = os.path.dirname(display_path)
 
-sys.path.append(software_path + "/display/")
+sys.path.append(display_path)
 
-from lib import LCD_1inch28
+from .lib import LCD_1inch28
 from PIL import Image, ImageDraw, ImageFont
 
 # Raspberry Pi pin configuration:
